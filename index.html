@@ -325,24 +325,64 @@
     color: rgba(253,246,236,.45);
   }
 
-  #muteBtn{
+  .mini-player-wrap{
     position: fixed;
-    top: 18px;
+    bottom: 18px;
     right: 18px;
-    z-index: 30;
-    width: 42px; height: 42px;
-    border-radius: 50%;
-    border: 1px solid rgba(255,255,255,.18);
-    background: rgba(255,255,255,.06);
-    color: var(--cream);
-    font-size: 1.1rem;
+    z-index: 35;
+    width: 240px;
+    background: rgba(26,19,48,.92);
+    border: 1px solid rgba(255,255,255,.14);
+    border-radius: 16px;
+    overflow: hidden;
+    box-shadow: 0 14px 34px rgba(0,0,0,.4);
+    backdrop-filter: blur(6px);
     display: none;
-    align-items: center;
-    justify-content: center;
-    cursor: pointer;
-    backdrop-filter: blur(4px);
+    flex-direction: column;
   }
-  #muteBtn.show{ display:flex; }
+  .mini-player-wrap.show{ display: flex; }
+  .mini-player-header{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    padding: 8px 12px;
+    font-family:'Nunito', sans-serif;
+    font-weight:700;
+    font-size: .82rem;
+    color: var(--cream);
+  }
+  #miniPlayerToggle{
+    background: rgba(255,255,255,.08);
+    border: none;
+    color: var(--cream);
+    width: 22px; height:22px;
+    border-radius: 6px;
+    font-size: .8rem;
+    cursor:pointer;
+    line-height:1;
+  }
+  .mini-player-body{
+    transition: max-height .3s ease, opacity .3s ease;
+    max-height: 220px;
+    opacity: 1;
+    overflow:hidden;
+  }
+  .mini-player-wrap.collapsed .mini-player-body{
+    max-height: 0;
+    opacity: 0;
+  }
+  #mini-player{
+    width: 240px;
+    height: 135px;
+    display:block;
+  }
+  .mini-player-hint{
+    font-family:'Caveat', cursive;
+    font-size: .95rem;
+    color: rgba(253,246,236,.55);
+    text-align:center;
+    padding: 6px 8px 10px;
+  }
 
   #loadingPrank{
     position: fixed;
@@ -463,7 +503,16 @@
     <p class="start-hint">Apértale ahi pe</p>
   </section>
 
-  <button id="muteBtn" aria-label="Silenciar música" title="Música">🔊</button>
+  <div id="miniPlayerWrap" class="mini-player-wrap">
+    <div class="mini-player-header">
+      <span id="miniPlayerTitle">🎵 música</span>
+      <button id="miniPlayerToggle" aria-label="Minimizar reproductor">—</button>
+    </div>
+    <div class="mini-player-body">
+      <div id="mini-player"></div>
+      <p class="mini-player-hint" id="miniPlayerHint">si no suena sola, dale play aquí 👆</p>
+    </div>
+  </div>
 
   <!-- TRIVIA -->
   <section id="trivia">
@@ -512,129 +561,117 @@ Me trae recuerdos de cuando nos conocimos en un server de robloxito, sé que no 
 
 </div>
 
-<div id="yt-player" style="position:fixed; top:-9999px; left:-9999px; width:1px; height:1px;"></div>
-<div id="yt-player-yes" style="position:fixed; top:-9999px; left:-9999px; width:1px; height:1px;"></div>
 <script>
-// ---------- música de fondo (YouTube, primeros 10 minutos) ----------
-const YT_VIDEO_ID = 'lr1fTEi9EMA';
-const MUSIC_LIMIT_MS = 10 * 60 * 1000; // 10 minutos
-let ytPlayer = null;
-let ytReady = false;
-let musicStopTimer = null;
-const muteBtn = document.getElementById('muteBtn');
-let isMuted = false;
-
-// ---------- canción especial al aceptar ----------
+// ---------- mini reproductor de música (widget visible con controles nativos) ----------
+const BG_VIDEO_ID = 'lr1fTEi9EMA';
 const YES_VIDEO_ID = 'IoHXCVmTptg';
-let yesPlayer = null;
-let yesReady = false;
+const MUSIC_LIMIT_MS = 10 * 60 * 1000; // 10 minutos
+
+let miniPlayer = null;
+let miniReady = false;
+let musicStopTimer = null;
+let pendingAction = null; // 'bg' | 'yes'
+
+const miniWrap = document.getElementById('miniPlayerWrap');
+const miniTitle = document.getElementById('miniPlayerTitle');
+const miniToggle = document.getElementById('miniPlayerToggle');
+const miniHint = document.getElementById('miniPlayerHint');
 
 const ytTag = document.createElement('script');
 ytTag.src = "https://www.youtube.com/iframe_api";
 document.body.appendChild(ytTag);
 
 window.onYouTubeIframeAPIReady = function(){
-  ytPlayer = new YT.Player('yt-player', {
-    height: '1',
-    width: '1',
-    videoId: YT_VIDEO_ID,
+  miniPlayer = new YT.Player('mini-player', {
+    height: '135',
+    width: '240',
+    videoId: BG_VIDEO_ID,
     playerVars: {
       autoplay: 0,
-      controls: 0,
-      disablekb: 1,
+      controls: 1,
       modestbranding: 1,
       rel: 0,
       origin: window.location.origin
     },
     events: {
       'onReady': function(){
-        ytReady = true;
-        if(wantsMusic) startMusic();
+        miniReady = true;
+        runPendingAction();
+      },
+      'onStateChange': function(e){
+        // si logra reproducir sola, ocultamos el hint de "dale play"
+        if(e.data === YT.PlayerState.PLAYING){
+          miniHint.style.display = 'none';
+        }
       },
       'onError': function(e){
-        console.warn('YouTube (música de fondo) no se pudo reproducir. Código de error:', e.data);
-      }
-    }
-  });
-
-  yesPlayer = new YT.Player('yt-player-yes', {
-    height: '1',
-    width: '1',
-    videoId: YES_VIDEO_ID,
-    playerVars: {
-      autoplay: 0,
-      controls: 0,
-      disablekb: 1,
-      modestbranding: 1,
-      rel: 0,
-      origin: window.location.origin
-    },
-    events: {
-      'onReady': function(){
-        yesReady = true;
-        if(wantsYesSong) playYesSong();
-      },
-      'onError': function(e){
-        console.warn('YouTube (canción final) no se pudo reproducir. Código de error:', e.data);
+        console.warn('YouTube no se pudo reproducir. Código de error:', e.data);
+        miniHint.textContent = 'no se pudo cargar el video (puede estar bloqueado para incrustar)';
       }
     }
   });
 };
 
-let wantsMusic = false;
-let wantsYesSong = false;
+function runPendingAction(){
+  if(!pendingAction || !miniReady || !miniPlayer) return;
+  if(pendingAction === 'bg'){
+    try{
+      miniPlayer.unMute();
+      miniPlayer.setVolume(100);
+      miniPlayer.playVideo();
+      musicStopTimer = setTimeout(fadeOutMusic, MUSIC_LIMIT_MS);
+    }catch(e){}
+  } else if(pendingAction === 'yes'){
+    try{
+      if(musicStopTimer) clearTimeout(musicStopTimer);
+      miniTitle.textContent = '💫 nuestra canción';
+      miniHint.style.display = 'block';
+      miniHint.textContent = 'si no suena sola, dale play aquí 👆';
+      miniPlayer.loadVideoById(YES_VIDEO_ID);
+      miniPlayer.setVolume(100);
+    }catch(e){}
+  }
+  pendingAction = null;
+}
+
+function showMiniPlayer(){
+  miniWrap.classList.add('show');
+  miniWrap.classList.remove('collapsed');
+  miniToggle.textContent = '—';
+}
 
 function startMusic(){
-  wantsMusic = true;
-  if(!ytReady || !ytPlayer || typeof ytPlayer.playVideo !== 'function') return;
-  try{
-    ytPlayer.unMute();
-    ytPlayer.setVolume(100);
-    ytPlayer.playVideo();
-    muteBtn.classList.add('show');
-    musicStopTimer = setTimeout(()=>{
-      fadeOutMusic();
-    }, MUSIC_LIMIT_MS);
-  }catch(e){ /* si YouTube no carga (sin internet, bloqueado, etc.), la página sigue funcionando sin música */ }
+  showMiniPlayer();
+  pendingAction = 'bg';
+  runPendingAction();
 }
 
 function fadeOutMusic(){
-  if(!ytPlayer || typeof ytPlayer.setVolume !== 'function') return;
+  if(!miniPlayer || typeof miniPlayer.setVolume !== 'function') return;
   let vol = 100;
   const fade = setInterval(()=>{
     vol -= 10;
     if(vol <= 0){
-      ytPlayer.pauseVideo();
-      ytPlayer.setVolume(100); // deja el volumen listo por si se vuelve a usar
+      miniPlayer.pauseVideo();
+      miniPlayer.setVolume(100); // deja el volumen listo por si se vuelve a usar
       clearInterval(fade);
     } else {
-      ytPlayer.setVolume(vol);
+      miniPlayer.setVolume(vol);
     }
   }, 150);
 }
 
 function playYesSong(){
-  wantsYesSong = true;
-  if(!yesReady || !yesPlayer || typeof yesPlayer.playVideo !== 'function') return;
-  try{
-    yesPlayer.unMute();
-    yesPlayer.setVolume(100);
-    yesPlayer.playVideo();
-    muteBtn.classList.add('show');
-  }catch(e){ /* si YouTube no carga, seguimos sin música especial */ }
+  showMiniPlayer();
+  pendingAction = 'yes';
+  runPendingAction();
 }
 
-muteBtn.addEventListener('click', ()=>{
-  isMuted = !isMuted;
-  if(isMuted){
-    if(ytPlayer) ytPlayer.mute();
-    if(yesPlayer) yesPlayer.mute();
-    muteBtn.textContent = '🔇';
-  } else {
-    if(ytPlayer) ytPlayer.unMute();
-    if(yesPlayer) yesPlayer.unMute();
-    muteBtn.textContent = '🔊';
-  }
+let miniCollapsed = false;
+miniToggle.addEventListener('click', ()=>{
+  miniCollapsed = !miniCollapsed;
+  miniWrap.classList.toggle('collapsed', miniCollapsed);
+  miniToggle.textContent = miniCollapsed ? '▢' : '—';
 });
 
 // ---------- sonido de confeti (meme: bocina viral, sintetizado) ----------
@@ -986,9 +1023,6 @@ document.getElementById('yesBtn').addEventListener('click', ()=>{
   finalEl.style.display = 'block';
   launchConfetti();
   if(musicStopTimer) clearTimeout(musicStopTimer);
-  if(ytPlayer && typeof ytPlayer.stopVideo === 'function'){
-    ytPlayer.stopVideo();
-  }
   playYesSong();
 });
 
