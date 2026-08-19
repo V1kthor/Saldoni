@@ -543,10 +543,17 @@ window.onYouTubeIframeAPIReady = function(){
       controls: 0,
       disablekb: 1,
       modestbranding: 1,
-      rel: 0
+      rel: 0,
+      origin: window.location.origin
     },
     events: {
-      'onReady': function(){ ytReady = true; }
+      'onReady': function(){
+        ytReady = true;
+        if(wantsMusic) startMusic();
+      },
+      'onError': function(e){
+        console.warn('YouTube (música de fondo) no se pudo reproducir. Código de error:', e.data);
+      }
     }
   });
 
@@ -559,17 +566,30 @@ window.onYouTubeIframeAPIReady = function(){
       controls: 0,
       disablekb: 1,
       modestbranding: 1,
-      rel: 0
+      rel: 0,
+      origin: window.location.origin
     },
     events: {
-      'onReady': function(){ yesReady = true; }
+      'onReady': function(){
+        yesReady = true;
+        if(wantsYesSong) playYesSong();
+      },
+      'onError': function(e){
+        console.warn('YouTube (canción final) no se pudo reproducir. Código de error:', e.data);
+      }
     }
   });
 };
 
+let wantsMusic = false;
+let wantsYesSong = false;
+
 function startMusic(){
+  wantsMusic = true;
   if(!ytReady || !ytPlayer || typeof ytPlayer.playVideo !== 'function') return;
   try{
+    ytPlayer.unMute();
+    ytPlayer.setVolume(100);
     ytPlayer.playVideo();
     muteBtn.classList.add('show');
     musicStopTimer = setTimeout(()=>{
@@ -594,8 +614,10 @@ function fadeOutMusic(){
 }
 
 function playYesSong(){
+  wantsYesSong = true;
   if(!yesReady || !yesPlayer || typeof yesPlayer.playVideo !== 'function') return;
   try{
+    yesPlayer.unMute();
     yesPlayer.setVolume(100);
     yesPlayer.playVideo();
     muteBtn.classList.add('show');
